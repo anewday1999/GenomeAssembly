@@ -1,0 +1,182 @@
+;returns all k-mers from a read
+(defun kmers (read k)
+    (cond ((< (length read) k) nil)
+        (t (append (list (subseq read 0 k)) (kmers (cdr read) k)))))
+
+;returns all k-mers from all reads
+(defun reads-kmers (reads k)
+    (cond ((null reads) nil)
+        (t (append (kmers (car reads) k) (reads-kmers (cdr reads) k)))))
+
+;builds a de brujin graph from (k-1)-mers
+(defun de-brujin-graph (reads k)
+    (cond ((null reads) nil)
+        (t (append (list (kmers (car reads) (- k 1))) (de-brujin-graph (cdr reads) k)))))
+                                                                       
+;ATTGATT
+;(setq reads '((A T T) (T T G) (T G A) (G A T) (A T T)))
+;(setq graph '(((A T) (T T)) ((T T) (T G)) ((T G) (G A)) ((G A) (A T)) ((A T) (T T))))
+
+;returns all edges beginning with the given node
+(defun search-node-as-begin (node graph)
+       (cond ((null graph) nil)
+             ( (equal node (caar graph)) (cons (car graph) (search-node-as-begin node (cdr graph))) )
+             (t (search-node-as-begin node (cdr graph)))))
+;(print (search-node-as-begin '(A T) graph))  =>      (((A T) (T T)) ((A T) (T T))) 
+
+;returns all edges ending with the given node
+(defun search-node-as-end (node graph)
+       (cond ((null graph) nil)
+             ( (equal node (cadar graph)) (cons (car graph) (search-node-as-end node (cdr graph))) )
+             (t (search-node-as-end node (cdr graph)))))
+;(print (search-node-as-end '(T G) graph)) => (((T T) (T G))) 
+
+;returns all nodes of graphs with repetition
+(defun nodes (graph)
+    (reduce #'append graph))
+;(print (nodes graph)) => ((A T) (T T) (T T) (T G) (T G) (G A) (G A) (A T) (A T) (T T)) 
+
+;checks if sublist is a member of list
+(defun list-member (sublist list)
+    (cond ((null list) nil)
+        ((equal sublist (car list)) t)
+        (t (list-member sublist (cdr list)))))
+;(print (list-member '(A T T) reads))
+
+;returns unique nodes from nodes
+(defun unique-nodes (nodes)
+    (cond ((null nodes) nil)
+        ((list-member (car nodes) (cdr nodes)) (unique-nodes (cdr nodes)))
+        (t (cons (car nodes) (unique-nodes (cdr nodes))))))
+;(print (unique-nodes (nodes graph))) => ((T G) (G A) (A T) (T T)) 
+(setq unodes '((T G) (G A) (A T) (T T))) 
+
+;calculates node degrees
+(defun calculate-degrees (nodes graph)
+    (cond ((null nodes) nil)
+        (t (append (list (list (car nodes) (- (length (search-node-as-begin (car nodes) graph)) (length (search-node-as-end (car nodes) graph)))))
+                (calculate-degrees (cdr nodes) graph)))))
+;(print (calculate-degrees unodes graph)) => (((T G) 0) ((G A) 0) ((A T) 1) ((T T) -1))
+
+;returns (degree=1 degree=-1 degree<>0)
+(defun graph-statistics (node-degree)
+    (cond ((null node-degree) '(0 0 0))
+        ((= (cadar node-degree) 1) (mapcar #'+ '(1 0 0) (graph-statistics (cdr node-degree))))
+        ((= (cadar node-degree) -1) (mapcar #'+ '(0 1 0) (graph-statistics (cdr node-degree))))
+        ((/= (cadar node-degree) 0) (mapcar #'+ '(0 0 1) (graph-statistics (cdr node-degree))))
+        (t (graph-statistics (cdr node-degree)))))
+;(print(graph-statistics (calculate-degrees unodes graph)))
+
+;checks if eulerian path exists
+(defun eulerian-path-existp (graph)
+    (let ((stat (graph-statistics(calculate-degrees (unique-nodes (nodes graph)) graph))))
+         (cond ((/= (car stat) 1) nil)
+             ((/= (cadr stat) 1) nil)
+             ((/= (caddr stat) 0) nil)
+             (t t))))
+;(print (eulerian-path-existp graph)) => T
+
+;returns the first node of the eulerian path
+(defun first-node (node-degree)
+    (cond ((null node-degree) nil)
+        ((= (cadar node-degree) 1) (caar node-degree))
+        (t (first-node (cdr node-degree)))))
+;(print(first-node (calculate-degrees unodes graph))) => (A T) 
+
+;returns the last node of the eulerian path
+(defun last-node (node-degree)
+    (cond ((null node-degree) nil)
+        ((= (cadar node-degree) -1) (caar node-degree))
+        (t (last-node (cdr node-degree)))))
+;(print(last-node (calculate-degrees unodes graph))) => (T T)
+
+;adds an edge to graph
+(defun add-edge (edge graph)
+    (append graph (list edge)))
+;(print (add-edge '((T T) (A T)) graph)) 
+
+
+;removes an edge from graph cnt times
+(defun remove-edge (edge graph cnt)
+    (cond ((null graph) nil)
+        ((and (/= cnt 0) (equal edge (car graph))) (remove-edge edge (cdr graph) (- cnt 1)))
+        (t (cons (car graph) (remove-edge edge (cdr graph) cnt)))))
+; (print (remove-edge '((T T) (T G)) added-graph 1)) => (((A T) (T T)) ((T G) (G A)) ((G A) (A T)) ((A T) (T T)) ((T T) (A T))) 
+
+;removes edges from graph
+(defun remove-edges (edges graph)
+    (cond ((null edges) graph)
+        (T (remove-edges (cdr edges) (remove-edge (car edges) graph 1)))))
+;(print (remove-edges '(((A T) (T T)) ((T T) (T G))) added-graph)) => (((T G) (G A)) ((G A) (A T)) ((A T) (T T)) ((T T) (A T)))
+
+
+;checks if list is not empty
+(defun not-empty-list (list)
+    (if (null (car list)) nil t))
+
+;insert a sublist into list at the n-th position
+(defun insert (sublist list n cnt)
+    (cond ((= cnt n) (append (list sublist) list))
+        (T (cons (car list) (insert sublist (cdr list) n (+ cnt 1))))))
+;(print (insert '(A B) '(A B C D) 2 0)) => (A B (A B) C D) 
+
+;checks if there is a path from start to end
+(defun pathp (start end graph)
+    (if (equal start end) t
+        (let ((edges (search-node-as-begin start graph)))
+             (if (null edges) nil (pathp (cadar edges) end graph)))))
+;(print (pathp '(A T) '(G A) '(((A T) (T T)) ((T G) (G A))))) => NIL 
+
+;checks if edge is considered a bridge
+(defun bridgep (edge graph)
+    (if (pathp (cadr edge) (car edge)  (remove-edge edge graph 1)) nil t))
+;(print (bridgep '((T T) (T G)) '(((A T) (T T)) ((T G) (G A)) ((T T) (T G)) ((A T) (A G))))) 
+
+;returns a not-bridge edge
+(defun not-bridge (edges graph)
+    (if (not (bridgep (car edges) graph)) (car edges)
+        (not-bridge (cdr edges) graph)))
+;(print (not-bridge '( ((T T) (T G))((A T) (T T))) graph)) => ((A T) (T T)) 
+
+;chooses the right edge to traverse
+;never choose a bridge if dont must to
+(defun right-edge(start graph)
+    (let ((edges (search-node-as-begin start graph)))
+         (if (= (length edges) 1) (car edges)
+             (not-bridge edges graph))))
+
+;returns the eulerian path
+(defun find-path (start graph path)
+    (let ((edge (right-edge start graph)))
+         (cond ((null graph) path)
+             (T (find-path (cadr edge) (remove-edge edge graph 1) (add-edge edge path))))))
+
+;checks and returns path
+(defun eulerian-path (graph)
+    (if (eulerian-path-existp graph) (find-path (first-node (calculate-degrees (unique-nodes (nodes graph)) graph)) graph '())
+        nil))
+
+;defines the eulerian path in the de brujin graph
+(defun DBG (reads k)
+    (eulerian-path (de-brujin-graph (reads-kmers reads k) k)))
+
+;(print (main reads 3))
+
+;ATTTAATAAT
+;(print (main '((A T T T A A T A A T)) 4))
+
+(setq path '(((A T T) (T T T)) ((T T T) (T T A)) ((T T A) (T A A)) ((T A A) (A A T))
+ ((A A T) (A T A)) ((A T A) (T A A)) ((T A A) (A A T))) )
+
+;returns a genome
+(defun genome-assembly (graph genome cnt)
+    (cond ((null graph) genome)
+        ((= cnt 0) (genome-assembly (cdr graph) (append (caar graph) (last (cadar graph))) (+ cnt 1)))
+        (T (genome-assembly (cdr graph) (append genome (last (cadar graph))) (+ cnt 1)))))
+
+;(print (genome-assembly path '() 0))
+(setq reads '((T T G) (T G A) (A T T)  (G A T) (A T T)))
+;(print (DBG reads 3))
+;(print (genome-assembly (DBG reads 3) '() 0))
+
+
